@@ -3,6 +3,7 @@ lexer grammar TeqlLexer;
 
 KW_AFTER                    : A F T E R;
 KW_AND                      : A N D;
+KW_ANY                      : A N Y;
 KW_AT                       : A T;
 KW_BEFORE                   : B E F O R E;
 KW_BEGIN                    : B E G I N;
@@ -40,8 +41,10 @@ KW_WITH                     : W I T H;
 INT                         : DIGIT+;
 COMMENT                     : ('--' ~[\r\n]* | '//' ~[\r\n]* | '/*' .*? '*/') -> channel(HIDDEN);
 STR_OPEN                    : '"' -> pushMode(STRING);
-REGEX_OPEN                  : '/' -> pushMode(REGEX); // TODO might need a predicate to keep paths from being detected as regexes; and some other mechanism to detect path start
+PATH                        : PATH_START? PATH_SEGMENT (PATH_SEP PATH_SEGMENT)*; // TODO might need a predicate to keep paths from being detected as regexes; and some other mechanism to detect path start
+REGEX_OPEN                  : '/' -> pushMode(REGEX); 
 VAR                         : '$' VAR_NAME;
+NAME                        : IDENTIFIER;
 HYPHEN                      : '-';
 COLON                       : ':';
 COMMA                       : ',';
@@ -54,10 +57,10 @@ SPACES                      : SPACE -> skip;
 mode STRING;
 
 STR_ESCAPE                  : '\\' .;
-STR_HEX_BYTE_2              : '\\x' HEXIT HEXIT;
-STR_HEX_BYTE_1              : '\\x' HEXIT;
-STR_UNICODE_4               : '\\u' HEXIT HEXIT HEXIT HEXIT;
-STR_UNICODE_FLEX            : '\\u{' HEXIT+ '}';
+STR_HEX_BYTE_2              : ESC_HEX_BYTE_2;
+STR_HEX_BYTE_1              : ESC_HEX_BYTE_1;
+STR_UNICODE_4               : ESC_UNICODE_4;
+STR_UNICODE_FLEX            : ESC_UNICODE_FLEX;
 STR_CLOSE                   : '"' -> popMode;
 STR_INTERPOLATE_OPEN        : '{' -> pushMode(STRING_INTERPOLATE);
 VAR_2                       : '$' VAR_NAME -> type(VAR);
@@ -72,10 +75,10 @@ STR_INTERPOLATE_CLOSE       : '}' -> popMode;
 mode REGEX;         
 
 REGEX_ESCAPE                : '\\' .;
-REGEX_HEX_BYTE_2            : '\\x' HEXIT HEXIT;
-REGEX_HEX_BYTE_1            : '\\x' HEXIT;
-REGEX_UNICODE_4             : '\\u' HEXIT HEXIT HEXIT HEXIT;
-REGEX_UNICODE_FLEX          : '\\u{' HEXIT+ '}';
+REGEX_HEX_BYTE_2            : ESC_HEX_BYTE_2;
+REGEX_HEX_BYTE_1            : ESC_HEX_BYTE_1;
+REGEX_UNICODE_4             : ESC_UNICODE_4;
+REGEX_UNICODE_FLEX          : ESC_UNICODE_FLEX;
 REGEX_INV_CHAR_CLASS_OPEN   : '[^' -> pushMode(REGEX_CHAR_CLASS);
 REGEX_CHAR_CLASS_OPEN       : '[' -> pushMode(REGEX_CHAR_CLASS);
 REGEX_NONCAP_GROUP_OPEN     : '(?:';
@@ -90,30 +93,22 @@ REGEX_REPEAT_FIXED          : '{' DIGIT+ '}' '?'?;
 REGEX_REPEAT_MIN            : '{' DIGIT+ ',}' '?'?;
 REGEX_REPEAT_MAX            : '{,' DIGIT+ '}' '?'?;
 REGEX_REPEAT_RANGE          : '{' DIGIT+ ',' DIGIT+ '}' '?'?;
-REGEX_CLOSE                 : '/' [ilmsux]* -> popMode;
-REGEX_COUNT_START           : '^';
-REGEX_COUNT_END             : '$';
+REGEX_ANCHOR_START          : '^';
+REGEX_ANCHOR_END            : '$';
 REGEX_OR                    : '|';
+REGEX_CLOSE                 : '/' [ilmsux]* -> popMode;
 REGEX_LITERAL               : .;
 
 mode REGEX_CHAR_CLASS;         
 
 REGEX_CC_ESCAPE             : '\\' . -> type(REGEX_ESCAPE);
-REGEX_CHAR_CLASS_RANGE      : '-';
-REGEX_CC_HEX_BYTE_2         : '\\x' HEXIT HEXIT -> type(REGEX_HEX_BYTE_2);
-REGEX_CC_HEX_BYTE_1         : '\\x' HEXIT -> type(REGEX_HEX_BYTE_1);
-REGEX_CC_UNICODE_4          : '\\u' HEXIT HEXIT HEXIT HEXIT -> type(REGEX_UNICODE_4);
-REGEX_CC_UNICODE_FLEX       : '\\u{' HEXIT+ '}' -> type(REGEX_UNICODE_FLEX);
+REGEX_CHAR_CLASS_RANGE      : '-'; // TODO some predicate to not match if previous token was not a literal of some kind
+REGEX_CC_HEX_BYTE_2         : ESC_HEX_BYTE_2 -> type(REGEX_HEX_BYTE_2);
+REGEX_CC_HEX_BYTE_1         : ESC_HEX_BYTE_1 -> type(REGEX_HEX_BYTE_1);
+REGEX_CC_UNICODE_4          : ESC_UNICODE_4 -> type(REGEX_UNICODE_4);
+REGEX_CC_UNICODE_FLEX       : ESC_UNICODE_FLEX -> type(REGEX_UNICODE_FLEX);
 REGEX_CHAR_CLASS_CLOSE      : ']' -> popMode;
 REGEX_CC_LITERAL            : . -> type(REGEX_LITERAL);
-
-
-mode PATH;
-
-PATH_ESCAPED_WS             : '\\' SPACE;
-PATH_SEP                    : [/\\];
-PATH_END                    : SPACE -> popMode; // TODO can we pop on any unrecognized symbol and try to lex it in the new mode?
-PATH_BODY                   : .;
 
 
 
@@ -125,6 +120,13 @@ fragment SPACE              : [ \t\r\n];
 fragment WORD_CHAR          : [a-zA-Z0-9_];
 fragment IDENTIFIER         : [a-zA-Z_\u0080-\ufffe][a-zA-Z0-9_\u0080-\ufffe]*;
 fragment VAR_NAME           : (IDENTIFIER|DIGIT*) ('.' (IDENTIFIER|DIGIT*))*;
+fragment PATH_START         : './' | '~/' | '/';
+fragment PATH_SEGMENT       : (~[\\/; \t\r\n]|('\\' SPACE))+;
+fragment PATH_SEP           : '/';
+fragment ESC_HEX_BYTE_2     : '\\x' HEXIT HEXIT;
+fragment ESC_HEX_BYTE_1     : '\\x' HEXIT;
+fragment ESC_UNICODE_4      : '\\u' HEXIT HEXIT HEXIT HEXIT;
+fragment ESC_UNICODE_FLEX   : '\\u{' HEXIT+ '}';
 fragment A                  : [aA];
 fragment B                  : [bB];
 fragment C                  : [cC];
